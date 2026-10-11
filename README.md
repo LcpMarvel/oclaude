@@ -1,34 +1,36 @@
 # oclaude
 
+**English** | [简体中文](README.zh-CN.md)
+
 [![Offline tests](https://github.com/LcpMarvel/oclaude/actions/workflows/tests.yml/badge.svg)](https://github.com/LcpMarvel/oclaude/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-一个轻量的社区启动器，让 Claude Code 通过本地 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 使用 Codex / ChatGPT 订阅登录。默认模型为 **GPT-6.1-Sol / High**，保留 Claude Code 的交互、工具和会话管理方式。
+A lightweight community launcher that lets Claude Code use a Codex / ChatGPT subscription login through a local [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) instance. The default model is **GPT-6.1-Sol / High**, with Claude Code's interactions, tools, and session management retained.
 
 ```text
-oclaude → Claude Code → CLIProxyAPI (127.0.0.1:18317) → Codex 订阅端点
+oclaude → Claude Code → CLIProxyAPI (127.0.0.1:18317) → Codex subscription endpoint
 ```
 
-本项目与 OpenAI、Anthropic 或 CLIProxyAPI 无隶属关系。这是社区集成方式；账号权限、模型可用性、订阅额度及服务条款由服务方决定，不代表服务方官方支持第三方 Claude Code 工作流。
+This project is not affiliated with OpenAI, Anthropic, or CLIProxyAPI. It is a community integration; account permissions, model availability, subscription limits, and terms of service are determined by the providers. It does not imply official provider support for third-party Claude Code workflows.
 
-## 特性
+## Features
 
-- 按需启动本地代理，支持多个会话；Claude 退出后代理继续运行。
-- 只读复用 Codex 的 ChatGPT 登录，或通过 CLIProxyAPI 独立 OAuth 登录。
-- 配置默认模型、模型别名、子代理模型和推理强度。
-- 为普通会话附加一份工程提示词，显式自定义提示词优先。
-- Python 标准库实现；安装器不下载依赖、不登录、不修改 shell 配置。
-- 无独立 API Key 计费回退，也不附带凭据或第三方二进制。
+- Starts a local proxy on demand and supports multiple sessions; the proxy keeps running after Claude exits.
+- Reuses a Codex ChatGPT login without modifying it, or supports independent OAuth login through CLIProxyAPI.
+- Configurable default model, model aliases, subagent model, and reasoning effort.
+- Appends an engineering prompt to regular sessions, with explicit custom prompts taking precedence.
+- Implemented with the Python standard library; the installer does not download dependencies, log in, or modify shell configuration.
+- No separately billed API key fallback, bundled credentials, or third-party binaries.
 
-## 依赖与兼容性
+## Requirements and compatibility
 
-需要 Python 3.10+、可在 `PATH` 中找到的 `claude` 命令，以及 CLIProxyAPI 可执行文件。Claude Code 的安装方式见其[官方快速开始](https://code.claude.com/docs/en/quickstart)。订阅调用需要具有相应访问权的 ChatGPT 账号。
+Requires Python 3.10+, a `claude` command on `PATH`, and a CLIProxyAPI executable. See the [official Claude Code quickstart](https://code.claude.com/docs/en/quickstart) for installation instructions. Subscription requests require a ChatGPT account with the relevant access.
 
-已实测环境：macOS ARM64、Python 3.14、Claude Code 2.1.295、CLIProxyAPI 7.3.2。代码面向 macOS / Linux，Linux 尚未实测；原生 Windows 不支持，因为启动器使用 `fcntl` 和 Unix 进程接口。其他版本的兼容性请自行验证，尤其是代理和 Claude Code 升级后。
+Validation environment: macOS ARM64, Python 3.14, and Claude Code 2.1.295. CLIProxyAPI 8.0.23 passed the isolated OAuth and model-catalog tests; those tests do not exercise live model inference or tool round trips. Offline CI covers macOS and Linux, but live proxy/model use on Linux remains unverified. Native Windows is unsupported because the launcher uses `fcntl` and Unix process interfaces. Verify compatibility after upgrading the proxy or Claude Code.
 
-## 安装
+## Installation
 
-1. 获取源码：
+1. Get the source:
 
    ```sh
    git clone https://github.com/LcpMarvel/oclaude.git
@@ -37,20 +39,20 @@ oclaude → Claude Code → CLIProxyAPI (127.0.0.1:18317) → Codex 订阅端点
    claude --version
    ```
 
-2. 从 CLIProxyAPI [官方 Releases](https://github.com/router-for-me/CLIProxyAPI/releases) 下载适合系统和 CPU 架构的发行包，以及**同一版本**的 `checksums.txt`。已实测版本可从 [v7.3.2](https://github.com/router-for-me/CLIProxyAPI/releases/tag/v7.3.2) 获取。不要把源码压缩包当作可执行发行包。
+2. From the CLIProxyAPI [official releases](https://github.com/router-for-me/CLIProxyAPI/releases), select the **latest stable release** (excluding drafts and prereleases). Download the package for your operating system and CPU architecture, together with `checksums.txt` from the **same version**. The tested version is available at [v8.0.23](https://github.com/router-for-me/CLIProxyAPI/releases/tag/v8.0.23). Source archives are not executable release packages.
 
-   解压前核对发行包的 SHA-256 与 `checksums.txt` 对应条目一致：
+   Before extracting, check that the package's SHA-256 matches its entry in `checksums.txt`:
 
    ```sh
-   # macOS：替换为实际下载文件名
+   # macOS: replace with the actual downloaded filename
    shasum -a 256 /path/to/downloaded-archive.tar.gz
    # Linux
    sha256sum /path/to/downloaded-archive.tar.gz
    ```
 
-   核对成功后解压，找到其中的 `cli-proxy-api` 可执行文件。保留同目录的上游 `LICENSE`，安装器会在存在时一并复制。
+   After verification, extract the package and locate the `cli-proxy-api` executable. Keep the upstream `LICENSE` in the same directory; the installer copies it when present.
 
-3. 在源码目录运行安装器，传入刚核对并解压得到的文件路径：
+3. Run the installer from the source directory, passing the path to the verified and extracted executable:
 
    ```sh
    python3 install.py /path/to/cli-proxy-api
@@ -58,26 +60,26 @@ oclaude → Claude Code → CLIProxyAPI (127.0.0.1:18317) → Codex 订阅端点
    oclaude --version
    ```
 
-   如需后续终端也能找到命令，把上面的 `export PATH=...` 加入自己的 shell 启动文件，例如 zsh 的 `~/.zshrc` 或 bash 的 `~/.bashrc`。安装器不会自动写入这些文件。
+   To make the command available in future terminals, add the `export PATH=...` line above to your shell startup file, such as `~/.zshrc` for zsh or `~/.bashrc` for bash. The installer does not edit those files.
 
-安装结果：
+Installed files:
 
-| 文件 | 安装位置 |
+| File | Installation location |
 | --- | --- |
-| 启动命令 | `~/.local/bin/oclaude` |
+| Launcher | `~/.local/bin/oclaude` |
 | CLIProxyAPI | `~/.local/lib/oclaude/cli-proxy-api` |
-| 默认附加提示词 | `~/.local/lib/oclaude/openai-system-prompt.md` |
-| 上游许可证（源文件存在时） | `~/.local/lib/oclaude/CLIProxyAPI-LICENSE` |
+| Default appended prompt | `~/.local/lib/oclaude/openai-system-prompt.md` |
+| Upstream license (when the source file exists) | `~/.local/lib/oclaude/CLIProxyAPI-LICENSE` |
 
-更新源码或默认提示词后重新运行安装器，再开启新会话。更新代理前先结束相关任务并运行 `oclaude --oclaude-stop`。
+After updating the source or default prompt, rerun the installer and start a new session. Before updating the proxy, finish any related tasks and run `oclaude --oclaude-stop`.
 
-## 登录与使用
+## Login and usage
 
-已有 Codex 的 ChatGPT 登录时，直接运行：
+If you already have a Codex ChatGPT login, run:
 
 ```sh
 oclaude
-oclaude -p '解释这个项目的入口'
+oclaude -p 'Explain the entry point of this project'
 oclaude --model gpt-6.1-sol --effort high
 oclaude --model fable
 oclaude --model sonnet
@@ -85,9 +87,9 @@ oclaude --model haiku
 oclaude --continue
 ```
 
-默认读取 `~/.codex/auth.json`；设置 `CODEX_HOME` 时读取该目录的 `auth.json`。要求登录模式为 `chatgpt`。每次启动同步有效访问令牌到代理私有目录，**不修改 Codex 登录文件，不复制 Codex 的刷新令牌**。
+The launcher reads `~/.codex/auth.json` by default, or `auth.json` under `CODEX_HOME` when set. The login mode must be `chatgpt`. On each launch, it syncs a valid access token into the proxy's private directory. **It does not modify the Codex login file or copy the Codex refresh token.**
 
-没有可用的 Codex 登录，或希望代理独立刷新令牌时：
+If no usable Codex login is available, or you want the proxy to refresh its own tokens:
 
 ```sh
 oclaude --oclaude-stop
@@ -95,45 +97,45 @@ oclaude --oclaude-login
 oclaude
 ```
 
-登录由 CLIProxyAPI 发起，通常会打开浏览器；选择希望使用额度的 ChatGPT 账号。代理保存并刷新这次独立授权，该登录优先于复用 Codex 登录。`--oclaude-setup` 是同一登录入口的别名。参见 [CLIProxyAPI Codex OAuth 文档](https://help.router-for.me/configuration/provider/codex)。
+CLIProxyAPI initiates login, usually opening a browser. Choose the ChatGPT account whose allowance you want to use. The proxy saves and refreshes this independent authorization, which takes precedence over reusing a Codex login. `--oclaude-setup` is an alias for the same login entry point. See the [CLIProxyAPI Codex OAuth documentation](https://help.router-for.me/configuration/provider/codex).
 
-复用模式只持有当前访问令牌。令牌过期时，先打开 Codex 刷新登录，再重启 `oclaude`；长期后台任务可使用独立 OAuth 登录。独立登录使用所选账号的权限和额度，请留意账号及工作区。
+Reuse mode holds only the current access token. When it expires, open Codex to refresh the login, then restart `oclaude`. Independent OAuth login is available for long-running background tasks. It uses the selected account's permissions and allowance; check the account and workspace you select.
 
-### 模型映射
+### Model mapping
 
-| 槽位 / 别名 | 默认模型 |
+| Slot / alias | Default model |
 | --- | --- |
-| 主会话、`sonnet`、`opus` | `gpt-6.1-sol` |
+| Main session, `sonnet`, `opus` | `gpt-6.1-sol` |
 | `fable` | `gpt-6-astra` |
-| `haiku`、快速任务 | `gpt-6-luna` |
-| 未显式指定模型的子代理 | `gpt-6.1-sol` |
+| `haiku`, fast tasks | `gpt-6-luna` |
+| Subagents without an explicit model | `gpt-6.1-sol` |
 
-普通会话未指定 `--effort` 时补上 `high`。`--model`、`--effort` 覆盖当前会话，环境变量改变默认槽位；子代理定义或调用中的显式模型仍优先。模型是否可用由代理目录和账号权限决定。
+Regular sessions receive `high` when `--effort` is not specified. `--model` and `--effort` override the current session; environment variables change the default slots. Explicit models in subagent definitions or invocations still take precedence. Model availability depends on the proxy catalog and account permissions.
 
-### 附加工程提示词
+### Appended engineering prompt
 
-普通交互和 `-p` 会话默认附加 [openai-system-prompt.md](openai-system-prompt.md)，保留 Claude Code 原生 system prompt 和工具规则。它强调检查真实输入与完整行为链路、常规决策自主推进、聚焦验证，以及如实报告结果与阻塞；不改变登录方式、模型映射或权限模式，也不保证模型始终遵循。
+Regular interactive and `-p` sessions append [openai-system-prompt.md](openai-system-prompt.md) by default, preserving Claude Code's native system prompt and tool rules. The prompt emphasizes inspecting actual inputs and the full behavior chain, proceeding autonomously with routine decisions, focused verification, and accurate reporting of results and blockers. It does not change login, model mapping, or permission mode, and does not guarantee model compliance.
 
-显式传入以下任一参数时，启动器跳过默认提示词注入，保留用户设置；支持 `--flag=value` 写法：
+When any of the following flags is explicitly supplied, the launcher skips default prompt injection and preserves the user's setting. The `--flag=value` form is supported:
 
 - `--system-prompt`
 - `--system-prompt-file`
 - `--append-system-prompt`
 - `--append-system-prompt-file`
 
-例如：
+For example:
 
 ```sh
 oclaude --append-system-prompt-file ./my-prompt.md
 ```
 
-需要默认策略与自定义策略同时生效时，把两者合并到一个文件并传入。源码运行读取源码目录的提示词；安装后的命令读取安装副本，修改源码后需要重新安装。
+To apply both the default policy and a custom policy, combine them in one file and pass it explicitly. Running from source reads the prompt in the source directory; the installed command reads the installed copy. Reinstall after changing the source prompt.
 
-`--continue` / `--resume` 可能沿用旧会话首次记录的 system prompt，直到压缩后才更新。验证提示词变化时优先开启新会话；启动器不主动改变快照设置。参见 [Claude Code 关于恢复会话的说明](https://code.claude.com/docs/en/cli-reference#system-prompt-flags-in-resumed-conversations)。
+`--continue` / `--resume` may retain the system prompt recorded when the session first started, until compaction updates it. Prefer a new session when verifying prompt changes; the launcher does not change snapshot settings. See [Claude Code's notes on resumed conversations](https://code.claude.com/docs/en/cli-reference#system-prompt-flags-in-resumed-conversations).
 
-## 配置
+## Configuration
 
-可以从终端传入环境变量，或创建 `~/.config/oclaude/env`（设置 `XDG_CONFIG_HOME` 时使用该目录下的 `oclaude/env`）。环境变量优先于文件。文件只支持简单 `NAME=value`，不执行 shell 表达式；文件必须仅当前用户可读写：
+Set environment variables in your terminal, or create `~/.config/oclaude/env` (under `oclaude/env` in `XDG_CONFIG_HOME` when set). Environment variables take precedence over the file. The file supports only simple `NAME=value` entries and does not execute shell expressions. It must be readable and writable only by the current user:
 
 ```sh
 mkdir -p "$HOME/.config/oclaude"
@@ -141,7 +143,7 @@ mkdir -p "$HOME/.config/oclaude"
 chmod 600 "$HOME/.config/oclaude/env"
 ```
 
-无需创建配置文件，也无需填写 Key。示例内容：
+A configuration file is optional, and no key is required. Example contents:
 
 ```dotenv
 OCLAUDE_MODEL=gpt-6.1-sol
@@ -149,75 +151,75 @@ OCLAUDE_EFFORT=high
 OCLAUDE_PORT=18317
 ```
 
-| 变量 | 默认值 / 用途 |
+| Variable | Default / purpose |
 | --- | --- |
 | `OCLAUDE_MODEL` | `gpt-6.1-sol` |
 | `OCLAUDE_FABLE_MODEL` | `gpt-6-astra` |
 | `OCLAUDE_OPUS_MODEL` | `gpt-6.1-sol` |
 | `OCLAUDE_SONNET_MODEL` | `gpt-6.1-sol` |
 | `OCLAUDE_HAIKU_MODEL` | `gpt-6-luna` |
-| `OCLAUDE_FAST_MODEL` | 与 Haiku 映射相同 |
-| `OCLAUDE_SUBAGENT_MODEL` | 与 Sonnet 映射相同 |
+| `OCLAUDE_FAST_MODEL` | Same as the Haiku mapping |
+| `OCLAUDE_SUBAGENT_MODEL` | Same as the Sonnet mapping |
 | `OCLAUDE_EFFORT` | `high` |
-| `OCLAUDE_CONTEXT_WINDOW` | `272000`；正整数，控制 Claude Code 的上下文窗口设置，保留自动压缩 |
-| `OCLAUDE_CODEX_AUTH_FILE` | `$CODEX_HOME/auth.json`，默认 `~/.codex/auth.json` |
-| `OCLAUDE_PROXY_URL` | 可选的上游网络代理 |
-| `OCLAUDE_PORT` | `18317`，仅绑定 `127.0.0.1` |
+| `OCLAUDE_CONTEXT_WINDOW` | `272000`; a positive integer controlling Claude Code's context window setting, with automatic compaction retained |
+| `OCLAUDE_CODEX_AUTH_FILE` | `$CODEX_HOME/auth.json`, defaulting to `~/.codex/auth.json` |
+| `OCLAUDE_PROXY_URL` | Optional upstream network proxy |
+| `OCLAUDE_PORT` | `18317`, bound only to `127.0.0.1` |
 | `OCLAUDE_API_TIMEOUT_MS` | `3000000` |
-| `OCLAUDE_STATE_DIR` | `~/.local/state/oclaude`；仅从终端环境设置 |
-| `OCLAUDE_KEYS_FILE` | 偏好配置文件路径，沿用旧命名；仅从终端环境设置 |
-| `OCLAUDE_PROXY_BIN` | 自定义 CLIProxyAPI 路径；否则先查 `PATH`，再查安装副本 |
+| `OCLAUDE_STATE_DIR` | `~/.local/state/oclaude`; set only through the terminal environment |
+| `OCLAUDE_KEYS_FILE` | Preferences file path, retaining the legacy name; set only through the terminal environment |
+| `OCLAUDE_PROXY_BIN` | Custom CLIProxyAPI path; otherwise searches `PATH`, then the installed copy |
 
-`272000` 是可配置默认值，**不是 OpenAI 全型号 API 的硬上限**。增大前核对实际订阅端点、模型和代理的限制。改变端口、上游网络代理或登录方式前，先结束相关任务并停止代理；已有会话需要重新启动才能载入新设置。
+`272000` is a configurable default, **not a hard API limit for all OpenAI models**. Before increasing it, check the limits of the actual subscription endpoint, model, and proxy. Before changing the port, upstream network proxy, or login method, finish related tasks and stop the proxy. Existing sessions must restart to load new settings.
 
-## 管理与故障排查
+## Management and troubleshooting
 
 ```sh
-oclaude agents --json       # 透传 Claude Code 管理命令
-oclaude --oclaude-status    # 检查本地代理状态
-oclaude --oclaude-stop      # 停止代理，保留 OAuth 登录
+oclaude agents --json       # Pass through a Claude Code management command
+oclaude --oclaude-status    # Check local proxy status
+oclaude --oclaude-stop      # Stop the proxy, keeping the OAuth login
 ```
 
-代理退出不会随 Claude 会话自动发生，没有安装开机服务。停止代理会中断进行中的请求。`--help` / `--version` 直接交给 Claude Code；其他已识别的管理命令不插入会话 effort 或提示词参数，但仍会走登录与代理准备流程。
+The proxy does not exit automatically with a Claude session, and no startup service is installed. Stopping the proxy interrupts ongoing requests. `--help` / `--version` are passed directly to Claude Code. Other recognized management commands receive no session effort or prompt flags, but still go through login and proxy preparation.
 
-| 问题 | 处理方式 |
+| Problem | What to do |
 | --- | --- |
-| `oclaude: command not found` | 把 `~/.local/bin` 加入 `PATH`，或使用完整命令路径 |
-| 找不到 `claude` / CLIProxyAPI | 检查 `PATH`；代理可用 `OCLAUDE_PROXY_BIN` 指向已安装文件 |
-| 未找到登录、登录模式不符或令牌过期 | 使用 `--oclaude-login`，或先让 Codex 刷新 ChatGPT 登录 |
-| 配置文件权限过宽 | 对配置文件执行 `chmod 600` |
-| 端口被占用 | 先检查占用进程；可设置 `OCLAUDE_PORT` 使用空闲端口 |
-| 代理启动失败、模型目录缺失、`unknown provider for model` | 在本机检查状态目录的 `proxy.log`；结束任务并停止代理后重启，检查版本、网络和模型名称 |
-| GPT 模型不在 Claude Code 内置目录的提示 | 可能只是目录识别提示；用实际请求结果判断是否调用成功，检查上下文窗口设置 |
-| 默认提示词文件缺失 | 在源码目录重新运行安装器 |
-| 旧 `OCLAUDE_API_KEY` / `OCLAUDE_BASE_URL` 被拒绝 | 移除旧配置；本项目只支持订阅登录 |
+| `oclaude: command not found` | Add `~/.local/bin` to `PATH`, or use the full command path |
+| `claude` / CLIProxyAPI not found | Check `PATH`; use `OCLAUDE_PROXY_BIN` to point to an installed proxy executable |
+| Login missing, wrong login mode, or expired token | Use `--oclaude-login`, or let Codex refresh its ChatGPT login first |
+| Configuration file permissions are too broad | Run `chmod 600` on the configuration file |
+| Port already in use | Check the process using it first; set `OCLAUDE_PORT` to a free port if needed |
+| Proxy startup fails, model catalog missing, or `unknown provider for model` | Inspect `proxy.log` in the state directory locally; finish tasks, stop and restart the proxy, and check versions, network, and model names |
+| GPT model not in Claude Code's built-in catalog warning | It may be a catalog recognition warning; use an actual request to check success, and check the context window setting |
+| Default prompt file missing | Rerun the installer from the source directory |
+| Old `OCLAUDE_API_KEY` / `OCLAUDE_BASE_URL` rejected | Remove the old configuration; this project supports subscription login only |
 
-代理启动会获取维护方的公开模型目录，并等待默认模型注册完成。首次启动需要网络；更新上游或模型名称后可能需要重启代理。提交问题时仅提供版本、脱敏错误和复现步骤，勿上传登录文件、整个状态目录或未经检查的日志。
+On startup, the proxy fetches its maintainer's public model catalog and waits for the default model to register. Initial startup needs network access; upstream or model name changes may require a proxy restart. When reporting an issue, provide only versions, sanitized errors, and reproduction steps. Do not upload login files, the entire state directory, or unchecked logs.
 
-## 开发与测试
+## Development and tests
 
-源码目录包含 Python 启动器 `oclaude`、安装器 `install.py`、共享提示词和聚焦测试。源码运行可使用 `python3 ./oclaude`；需已有依赖，或通过 `OCLAUDE_PROXY_BIN` 指定代理。
+The source directory contains the Python launcher `oclaude`, installer `install.py`, shared prompt, and focused tests. Run from source with `python3 ./oclaude`; dependencies must already be available, or specify the proxy with `OCLAUDE_PROXY_BIN`.
 
 ```sh
-# 离线单元测试：参数透传、提示词覆盖、安装副本等
+# Offline unit tests: argument passthrough, prompt overrides, installed copies, etc.
 python3 -m unittest -v test_prompt.py
 
-# 集成测试：需要真实代理二进制及网络，以虚构令牌获取公开模型目录
+# Integration tests: require a real proxy binary and network; use fictional tokens to fetch the public model catalog
 python3 test_oclaude.py /path/to/cli-proxy-api
 ```
 
-集成测试使用临时状态目录和假的 Claude 命令，不执行模型推理，不使用真实账号。它检查订阅配置、API Key 隔离、只读令牌同步、刷新令牌不复制、模型目录、effort、提示词参数和管理参数；不能证明真实账号的额度、工具调用兼容性或全部 Claude Code 功能可用。
+Integration tests use a temporary state directory and a fake Claude command. They do not run model inference or use a real account. They check subscription configuration, API key isolation, read-only token sync, refresh tokens not being copied, the model catalog, effort, prompt flags, and management arguments. They cannot establish real account allowance, tool-call compatibility, or support for every Claude Code feature.
 
-贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题报告方式见 [SECURITY.md](SECURITY.md)。
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributions and [SECURITY.md](SECURITY.md) for reporting security issues.
 
-## 隐私与限制
+## Privacy and limitations
 
-状态目录默认是 `~/.local/state/oclaude`，权限为 `700`；生成的配置和令牌文件权限为 `600`。Claude 进程使用随机本地代理令牌，启动器移除继承的 OpenAI、Anthropic 等相关凭据变量。代理的远程管理、管理面板、使用统计及请求日志关闭；仍会保存代理进程输出，Claude Code 自身也可能保存会话记录。
+The default state directory is `~/.local/state/oclaude`, with mode `700`; generated configuration and token files have mode `600`. The Claude process uses a random local proxy token, and the launcher removes inherited OpenAI, Anthropic, and related credential variables. Proxy remote management, the management panel, usage statistics, and request logging are disabled. Proxy process output is still saved, and Claude Code may also save session records.
 
-请求内容经本地代理发送给订阅服务，不是离线推理。普通 `claude` 的全局配置和权限模式不会被此启动器改写；Claude Code 的权限、项目设置与外部工具仍需按实际使用管理。独立 OAuth 登录会在本机保存供代理刷新的凭据；复用模式不复制 Codex 刷新令牌。
+Request content goes through the local proxy to the subscription service; inference is not offline. The launcher does not rewrite the global configuration or permission mode of regular `claude`. Manage Claude Code permissions, project settings, and external tools according to your use. Independent OAuth login stores credentials locally so the proxy can refresh tokens; reuse mode does not copy the Codex refresh token.
 
-`OPENAI_API_KEY` 不会作为调用凭据，也没有独立 API 计费回退。实际额度扣减和模型访问权由订阅服务端决定；Claude 显示的美元成本估算不代表 OpenAI API 账单。上游订阅端点、模型目录及 Claude Code 行为变化可能影响兼容性。
+`OPENAI_API_KEY` is not used as a request credential, and there is no separately billed API fallback. Actual allowance deductions and model access are determined by the subscription service. Claude's dollar cost estimate does not represent an OpenAI API bill. Changes to upstream subscription endpoints, model catalogs, or Claude Code behavior may affect compatibility.
 
-## 许可证
+## License
 
-本项目采用 [MIT 许可证](LICENSE)。CLIProxyAPI 和 Claude Code 各自遵循其上游许可证与服务条款；本仓库不分发它们的二进制或登录凭据。
+This project uses the [MIT License](LICENSE). CLIProxyAPI and Claude Code each remain subject to their upstream licenses and terms of service. This repository does not distribute their binaries or login credentials.

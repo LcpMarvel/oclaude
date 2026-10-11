@@ -1,5 +1,11 @@
 # 更新记录
 
+## Unreleased
+
+- 提供英文 `README.md` 和中文 `README.zh-CN.md`，附双向语言切换。
+- 安装说明改为推荐 CLIProxyAPI 最新稳定版，排除 draft / prerelease。
+- CLIProxyAPI 8.0.23 已通过 SHA-256 校验及虚构 OAuth 隔离兼容测试。
+
 ## 0.1.0 — 2026-10-11
 
 首个公开版本。
