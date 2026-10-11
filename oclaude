@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+"""Claude Code → local CLIProxyAPI → Codex subscription (macOS/Linux)."""
+import fcntl
+import base64
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import secrets
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+
+CONFIG_HOME = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'oclaude'
+STATE = Path(os.environ.get('OCLAUDE_STATE_DIR', Path.home() / '.local/state/oclaude')).expanduser().resolve()
+KEYS = Path(os.environ.get('OCLAUDE_KEYS_FILE', CONFIG_HOME / 'env')).expanduser().resolve()
+DEFAULT_MODEL = 'gpt-6.1-sol'
+ROOT = Path(__file__).resolve().parent
+PROMPT_FILE = ((Path.home() / '.local/lib/oclaude'
+                if ROOT == (Path.home() / '.local/bin').resolve() else ROOT)
+               / 'openai-system-prompt.md').resolve()
+MANAGEMENT = {'agents', 'attach', 'auth', 'auto-mode', 'daemon', 'doctor', 'gateway',
+              'help', 'import', 'install', 'logs', 'mcp', 'plugin', 'plugins', 'project',
+              'purge', 'remote-control', 'respawn', 'rm', 'self-hosted-runner',
+              'setup-token', 'stop', 'kill', 'ultrareview', 'update', 'upgrade'}
+PROMPT_FLAGS = {'--system-prompt', '--system-prompt-file',
+                '--append-system-prompt', '--append-system-prompt-file'}
+
+
+def session_args(args, effort):
+    if args and (args[0] in MANAGEMENT or
+                 args[:2] == ['--dangerously-skip-permissions', 'daemon']):
+        return args
+    # Arguments after -- are literal prompt text, not launcher options.
+    options = args[:args.index('--')] if '--' in args else args
+    prefix = []
+    if not any(a == '--effort' or a.startswith('--effort=') for a in options):
+        prefix += ['--effort', effort]
+    # Explicit prompt settings own the session; repeated file flags do not stack.
+    if not any(a.split('=', 1)[0] in PROMPT_FLAGS for a in options):
+        if not PROMPT_FILE.is_file():
+            raise ValueError(f'缺少默认提示词文件 {PROMPT_FILE}；请重新运行 install.py')
+        prefix += ['--append-system-prompt-file', str(PROMPT_FILE)]
+    return prefix + args
+
+
+def settings():
+    # A dedicated dotenv file, never executed as shell code. Generic
+    # OPENAI_API_KEY is deliberately ignored, including inherited runtime keys.
+    values = {}
+    if KEYS.exists():
+        if KEYS.stat().st_mode & 0o077:
+            raise ValueError(f'凭据文件权限过宽，请执行 chmod 600 {shlex.quote(str(KEYS))}')
+        for line in KEYS.read_text().splitlines():
+            parts = shlex.split(line, comments=True)
+            if parts[:1] == ['export']:
+                parts = parts[1:]
+            if not parts:
+                continue
+            if len(parts) != 1 or '=' not in parts[0]:
+                raise ValueError('凭据文件只支持 NAME=value，不执行 shell 表达式')
+            name, value = parts[0].split('=', 1)
+            if name.startswith('OCLAUDE_'):
+                values[name] = value
+    values.update({k: v for k, v in os.environ.items() if k.startswith('OCLAUDE_')})
+    return values
+
+
+def private_write(path, data):
+    tmp = path.with_suffix(path.suffix + '.tmp')
+    with open(tmp, 'w', opener=lambda p, flags: os.open(p, flags, 0o600)) as f:
+        os.chmod(tmp, 0o600)
+        f.write(data)
+    tmp.replace(path)
+
+
+def clean_env():
+    return {k: v for k, v in os.environ.items()
+            if not k.startswith(('ANTHROPIC_', 'OCLAUDE_', 'OPENAI_', 'CLAUDE_CODE_USE_'))
+            and k not in ('CLAUDE_CODE_OAUTH_TOKEN', 'Z_AI_API_KEY', 'DEEPSEEK_API_KEY')}
+
+
+def healthy(config, model=None):
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{config['port']}/v1/models",
+        headers={'Authorization': 'Bearer ' + config['api-keys'][0]})
+    try:
+        # Never send the local proxy token through an inherited HTTP proxy.
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(request, timeout=1) as r:
+            return r.status == 200 and (model is None or
+                                      model in {m['id'] for m in json.load(r)['data']})
+    except (OSError, ValueError):
+        return False
+
+
+def read_config():
+    path = STATE / 'config.json'
+    return json.loads(path.read_text()) if path.exists() else None
+
+
+def stop_proxy(config):
+    pidfile = STATE / 'proxy.pid'
+    if not pidfile.exists():
+        return
+    pid = int(pidfile.read_text())
+    cmd = subprocess.run(['ps', '-p', str(pid), '-o', 'command='], capture_output=True, text=True).stdout
+    # Do not kill a reused PID or an unrelated user's proxy.
+    if str(STATE / 'config.json') in cmd and 'proxy' in cmd:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(50):
+            if not config or not healthy(config):
+                break
+            time.sleep(.1)
+    if config and healthy(config):
+        raise ValueError('未能确认代理进程已停止，保留配置以便检查')
+    pidfile.unlink(missing_ok=True)
+
+
+def sync_codex_login(opts):
+    authdir = STATE / 'auth'
+    authdir.mkdir(mode=0o700, exist_ok=True)
+    imported = authdir / 'codex-imported.json'
+    # An independent CLIProxyAPI OAuth login owns its own refresh token.
+    for path in authdir.glob('*.json'):
+        if path != imported:
+            item = json.loads(path.read_text())
+            if item.get('type') == 'codex' and item.get('access_token') and not item.get('disabled'):
+                return
+    source = Path(opts.get('OCLAUDE_CODEX_AUTH_FILE',
+                          Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')) / 'auth.json')).expanduser()
+    if not source.is_file():
+        raise ValueError('未找到 Codex 登录；请运行 oclaude --oclaude-login，以 ChatGPT 账号授权')
+    auth = json.loads(source.read_text())
+    tokens = auth.get('tokens') or {}
+    access = tokens.get('access_token')
+    if auth.get('auth_mode') != 'chatgpt' or not access:
+        raise ValueError('Codex 当前不是 ChatGPT 订阅登录；请运行 oclaude --oclaude-login')
+    try:
+        payload = access.split('.')[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+        expires = int(claims['exp'])
+    except (ValueError, KeyError, IndexError):
+        raise ValueError('无法读取 Codex 访问令牌的有效期；请运行 oclaude --oclaude-login') from None
+    if expires < time.time() + 60:
+        raise ValueError('Codex 访问令牌已过期；先打开 Codex 刷新登录，或运行 oclaude --oclaude-login')
+    # Read-only import: never copy/rotate Codex's refresh token or edit auth.json.
+    data = {'type': 'codex', 'access_token': access,
+            'account_id': tokens.get('account_id', ''),
+            'email': claims.get('email', ''),
+            'expired': datetime.fromtimestamp(expires, timezone.utc).isoformat(),
+            'last_refresh': datetime.now(timezone.utc).isoformat()}
+    private_write(imported, json.dumps(data))
+
+
+def proxy_binary(opts):
+    binary = opts.get('OCLAUDE_PROXY_BIN') or shutil.which('cli-proxy-api') or shutil.which('cliproxyapi')
+    if not binary:
+        candidate = Path.home() / '.local/lib/oclaude/cli-proxy-api'
+        if candidate.is_file():
+            binary = str(candidate)
+    if not binary:
+        raise ValueError('找不到 CLIProxyAPI；请安装依赖或设置 OCLAUDE_PROXY_BIN')
+    return str(Path(binary).resolve())
+
+
+def ensure_proxy(opts, login=False):
+    # Subscription-only: there is intentionally no codex-api-key provider.
+    port = int(opts.get('OCLAUDE_PORT', '18317'))
+    old = read_config()
+    if old and healthy(old):
+        if login or old.get('codex-api-key') or old['port'] != port or old.get('proxy-url', '') != opts.get('OCLAUDE_PROXY_URL', ''):
+            raise ValueError('请先结束相关任务并运行 oclaude --oclaude-stop，再更改连接或登录')
+        return old
+    binary = proxy_binary(opts)
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', port))
+    authdir = STATE / 'auth'
+    authdir.mkdir(mode=0o700, exist_ok=True)
+    config = {
+        'host': '127.0.0.1', 'port': port, 'auth-dir': str(authdir),
+        'api-keys': [secrets.token_urlsafe(32)],
+        'proxy-url': opts.get('OCLAUDE_PROXY_URL', ''),
+        'remote-management': {'allow-remote': False, 'secret-key': '', 'disable-control-panel': True},
+        'debug': False, 'logging-to-file': False, 'request-log': False,
+        'usage-statistics-enabled': False, 'request-retry': 1,
+        'quota-exceeded': {'switch-project': False, 'switch-preview-model': False},
+    }
+    path = STATE / 'config.json'
+    private_write(path, json.dumps(config))
+    if login:
+        return config
+    with open(STATE / 'proxy.log', 'w', opener=lambda p, f: os.open(p, f, 0o600)) as log:
+        process = subprocess.Popen([str(Path(binary).resolve()), '-config', str(path)],
+                                   cwd=STATE, env=clean_env(), stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=log, start_new_session=True)
+    private_write(STATE / 'proxy.pid', str(process.pid))
+    for _ in range(100):
+        if process.poll() is not None:
+            break
+        if healthy(config):
+            return config
+        time.sleep(.1)
+    if process.poll() is None:
+        process.terminate()
+        process.wait(timeout=5)
+    raise ValueError(f'代理启动失败，请在本机检查 {STATE / "proxy.log"}')
+
+
+def main():
+    args = sys.argv[1:]
+    claude = shutil.which('claude')
+    if args in (['--help'], ['-h'], ['--version'], ['-v']):
+        if not claude:
+            raise ValueError('找不到 claude')
+        os.execve(claude, [claude, *args], clean_env())
+    STATE.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(STATE, 0o700)
+    with open(STATE / 'startup.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if args == ['--oclaude-status']:
+            config = read_config()
+            print('代理运行中' if config and healthy(config) else '代理未运行')
+            print(f'计费: Codex / ChatGPT 订阅; 默认模型: {DEFAULT_MODEL}; effort: high')
+            return
+        if args == ['--oclaude-stop']:
+            stop_proxy(read_config())
+            # OAuth login persists across proxy restarts; remove only runtime config.
+            (STATE / 'config.json').unlink(missing_ok=True)
+            print('oclaude 代理已停止')
+            return
+        if not claude:
+            raise ValueError('找不到 claude')
+        opts = settings()
+        if opts.get('OCLAUDE_API_KEY') or opts.get('OCLAUDE_BASE_URL'):
+            raise ValueError('此版本仅使用 Codex 订阅，请移除旧的 OCLAUDE_API_KEY / OCLAUDE_BASE_URL 设置')
+        model = opts.get('OCLAUDE_MODEL', DEFAULT_MODEL)
+        fable = opts.get('OCLAUDE_FABLE_MODEL', 'gpt-6-astra')
+        opus = opts.get('OCLAUDE_OPUS_MODEL', DEFAULT_MODEL)
+        sonnet = opts.get('OCLAUDE_SONNET_MODEL', 'gpt-6.1-sol')
+        haiku = opts.get('OCLAUDE_HAIKU_MODEL', 'gpt-6-luna')
+        fast = opts.get('OCLAUDE_FAST_MODEL', haiku)
+        effort = opts.get('OCLAUDE_EFFORT', 'high')
+        context_window = int(opts.get('OCLAUDE_CONTEXT_WINDOW', '272000'))
+        if context_window <= 0:
+            raise ValueError('OCLAUDE_CONTEXT_WINDOW 必须为正整数')
+        if args in (['--oclaude-login'], ['--oclaude-setup']):
+            config = ensure_proxy(opts, login=True)
+            result = subprocess.run([proxy_binary(opts), '-config', str(STATE / 'config.json'),
+                                     '-local-model', '-codex-login'], env=clean_env(), cwd=STATE,
+                                    preexec_fn=lambda: os.umask(0o077))
+            if result.returncode:
+                raise ValueError('Codex OAuth 登录未完成')
+            files = [p for p in (STATE / 'auth').glob('*.json') if p.name != 'codex-imported.json']
+            if not files:
+                raise ValueError('登录未生成凭据，请重新运行 oclaude --oclaude-login')
+            for path in files:
+                path.chmod(0o600)
+            (STATE / 'auth/codex-imported.json').unlink(missing_ok=True)
+            print('Codex OAuth 登录完成；现在可以运行 oclaude')
+            return
+        args = session_args(args, effort)
+        sync_codex_login(opts)
+        config = ensure_proxy(opts)
+        # The proxy refreshes its catalog in the background. Wait for the selected
+        # default before launching Claude, so a new model does not race startup.
+        deadline = time.monotonic() + 30
+        while not healthy(config, model):
+            if time.monotonic() >= deadline:
+                raise ValueError(f'代理目录尚未包含模型 {model}；请运行 oclaude --oclaude-stop 后重试，或检查代理日志')
+            time.sleep(.2)
+    env = clean_env()
+    env.update({
+        'ANTHROPIC_BASE_URL': f"http://127.0.0.1:{config['port']}",
+        'ANTHROPIC_AUTH_TOKEN': config['api-keys'][0],
+        'ANTHROPIC_MODEL': model, 'ANTHROPIC_DEFAULT_OPUS_MODEL': opus,
+        'ANTHROPIC_DEFAULT_FABLE_MODEL': fable,
+        'ANTHROPIC_DEFAULT_SONNET_MODEL': sonnet, 'ANTHROPIC_DEFAULT_HAIKU_MODEL': haiku,
+        'ANTHROPIC_SMALL_FAST_MODEL': fast,
+        'CLAUDE_CODE_SUBAGENT_MODEL': opts.get('OCLAUDE_SUBAGENT_MODEL', sonnet),
+        'CLAUDE_CODE_EFFORT_LEVEL': effort, 'CLAUDE_CODE_ALWAYS_ENABLE_EFFORT': '1',
+        'CLAUDE_CODE_MAX_CONTEXT_TOKENS': str(context_window),
+        'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC': '1', 'ENABLE_TOOL_SEARCH': 'false',
+        'API_TIMEOUT_MS': opts.get('OCLAUDE_API_TIMEOUT_MS', '3000000'),
+    })
+    os.execve(claude, [claude, *args], env)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'oclaude: {error}', file=sys.stderr)
+        sys.exit(1)

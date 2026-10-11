@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.env
+env
+.env.*
+!.env.example
+.DS_Store
+.venv/
+venv/
+.pytest_cache/
+*.log
+# Local credentials, proxy runtime state, and downloaded executables.
+auth.json
+auth/
+state/
+config.json
+codex-imported.json
+cli-proxy-api
+cliproxyapi
+*.tar.gz
+*.zip
